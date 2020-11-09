@@ -2,27 +2,163 @@
 title: "individual2"
 output: html_document
 ---
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+### Reading in datasets
+```{r}
+acc <- read.csv("https://raw.githubusercontent.com/xdaiISU/ds202materials/master/hwlabs/fars2017/accident.csv", stringsAsFactors = FALSE)
+per <- read.csv("https://raw.githubusercontent.com/xdaiISU/ds202materials/master/hwlabs/fars2017/person.csv", stringsAsFactors = FALSE)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+library(tidyverse)
+library(lubridate)
+library(ggrepel)
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r}
+str(acc)
+str(per)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Question 1
+
+### Setting the names from binary
+```{r}
+acc$DAY_WEEK %>%
+  recode("1"="Sunday", "2"="Monday", "3"="Tuesday", "4"="Wednesday", "5"="Thursday", "6"="Friday", "7"="Saturday")
+```
+
+```{r}
+acc %>%
+  group_by(DAY_WEEK) %>%
+  summarise(Count=n(), .groups="keep") %>%
+  ggplot(aes(x=DAY_WEEK, y=Count)) + geom_bar(stat="identity")
+```
+
+After assessing the data, I can conclude that the weekend tends to have more accidents than the weekdays. 
+
+
+### Question 2
+
+```{r}
+fatal <- per %>% 
+  filter(INJ_SEV==4) 
+```
+
+
+### Question 3
+
+```{r}
+dangerous <- fatal%>%
+  drop_na(MAKE) %>%
+  group_by(STATE, MAKE) %>%
+  summarize(Deaths = sum(PER_NO)) %>%
+  group_by(STATE) %>%
+  top_n(1, Deaths)
+dangerous
+```
+### Question 4
+
+```{r}
+states <- map_data("state")
+makeCodes <- read.csv("makeCodes.csv")
+stateCodes <- read.csv("stateCodes.csv")
+stateCodes$State <- tolower(stateCodes$State)
+```
+
+```{r}
+dangerous2 <- dangerous %>%
+  left_join(stateCodes, by=c("STATE"="Codes")) %>%
+  left_join(makeCodes, by=c("MAKE"="Codes")) 
+```
+
+```{r}
+dangerousStateMap <- dangerous2 %>%
+  left_join(states, by=c("State"="region"))
+```
+
+```{r}
+states2 <- states %>%
+  group_by(region) %>%
+  summarise(long=mean(long), lat=mean(lat), .groups="keep") %>%
+  left_join(dangerous2, by=c("region"="State"))
+```
+```{r}
+ggplot(dangerousStateMap, aes(x= long, y = lat, fill=Deaths)) + geom_polygon(aes(group=group)) +
+geom_text_repel(data=states2, color="black", aes(label=Make), size = 1.5) + ggtitle("Map of states with the most dangerous vehicle make")
+```
+
+### Question 5
+
+```{r}
+perAcc <- per %>%
+  left_join(acc, by="ST_CASE") %>%
+  distinct(ST_CASE, .keep_all = TRUE)
+```
+
+### Question 6
+
+```{r}
+perAcc %>%
+  ggplot(aes(x=DAY_WEEK, fill =SEX)) +
+  geom_bar(position="dodge", stat="count")
+  
+```
+
+
+### Question 7
+
+```{r}
+library(readxl)
+GLCs <- readxl::read_xlsx("GLCs.xlsx")
+GLCs <- GLCs %>% 
+  select(CountyName, CountyCode, StateName, StateCode)
+GLCs$CountyName <- tolower(GLCs$CountyName)
+GLCs$StateName <- tolower(GLCs$StateName)
+GLCs$CountyCode <- as.numeric(GLCs$CountyCode)
+GLCs$StateCode <- as.numeric(GLCs$StateCode)
+```
+
+
+
+```{r}
+county <- map_data("county")
+
+
+fatal %>%
+  group_by(STATE, COUNTY) %>%
+  summarise(Deaths = sum(PER_NO)) %>%
+  left_join(GLCs, by=c("STATE"="StateCode", "COUNTY"="CountyCode")) %>%
+  distinct(COUNTY, STATE, .keep_all = TRUE) %>%
+  left_join(county, by=c("CountyName"="subregion", "StateName"="region")) %>%
+  ggplot(aes(x= long, y = lat, group=group, fill=Deaths)) + geom_polygon() + ggtitle("Deaths by County")
+
+```
+
+
+
+### Question 8
+
+### Winter
+```{r}
+
+Winter <- fatal %>%
+  filter(MONTH == 12 | MONTH <= 2)
+Winter %>%
+  select(PER_NO, ST_CASE, STATE) %>%
+  group_by(STATE) %>%
+  summarise(Deaths=sum(PER_NO))
+
+```
+
+### Summer
+```{r}
+Summer <- fatal %>%
+  filter(MONTH >= 6 & MONTH <= 8)
+Summer %>%
+  select(PER_NO, ST_CASE, STATE) %>%
+  group_by(STATE) %>%
+  summarise(Deaths=sum(PER_NO))
+
+```
+
+After comparing the difference between Summer and Winter deaths, I can conclude that Summer has more deaths than the winter.
